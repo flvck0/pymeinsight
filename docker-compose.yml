@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pymeinsight}
+      POSTGRES_USER: ${POSTGRES_USER:-pyme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pyme}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pyme} -d ${POSTGRES_DB:-pymeinsight}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  core-api:
+    build: ./services/core-api
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-pymeinsight}
+      DB_USER: ${POSTGRES_USER:-pyme}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-pyme}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ml-service:
+    build: ./services/ml-service
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      MONGO_DB: ${POSTGRES_DB:-pymeinsight}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  web:
+    build: ./web
+    depends_on:
+      - core-api
+      - ml-service
+    ports:
+      - "5173:80"
+
+volumes:
+  pgdata:
+  mongodata:
